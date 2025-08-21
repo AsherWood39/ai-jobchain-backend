@@ -82,17 +82,18 @@ CORS_ALLOWED_ORIGINS = [
 	*(h.strip() for h in os.getenv('CORS_ALLOWED_ORIGINS', _default_cors).split(',')),
 ]
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_HEADERS = list({
-	'accept',
-	'accept-encoding',
-	'authorization',
-	'content-type',
-	'dnt',
-	'origin',
-	'user-agent',
-	'x-csrftoken',
-	'x-requested-with',
-})
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+
 CSRF_TRUSTED_ORIGINS = [
 	*(h.replace('http://', 'http://').replace('https://', 'https://') for h in CORS_ALLOWED_ORIGINS)
 ]
