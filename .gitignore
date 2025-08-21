@@ -1,0 +1,30 @@
+zenithwork-17258-firebase-adminsdk-fbsvc-441aa01a2a.json
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+*.db
+*.log
+
+# Django
+*.pot
+*.pyc
+*.pyo
+*.pyd
+db.sqlite3
+media/
+staticfiles/
+
+# VSCode
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+*.json
+.env
+firebase-service-account.json
