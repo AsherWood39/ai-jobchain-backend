@@ -1,59 +1,96 @@
 import os
 import json
-import google.generativeai as genai
 from django.conf import settings
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
-from rest_framework.views import APIView # Import APIView
-from .models import JobPost, UserProfile
-from .serializers import JobPostSerializer
+from rest_framework.views import APIView  # Import APIView
+from .models import JobPost, UserProfile, Skill
+from .serializers import JobPostSerializer, SkillSerializer
+
 
 class IsEmployer(permissions.BasePermission):
-	def has_permission(self, request, view):
-		if request.method in permissions.SAFE_METHODS:
-			return True
-		return (
-			request.user.is_authenticated and
-			hasattr(request.user, "profile") and
-			request.user.profile.role == UserProfile.Role.EMPLOYER
-		)
+    def has_permission(self, request, view):
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        return (
+            request.user.is_authenticated and
+            hasattr(request.user, "profile") and
+            request.user.profile.role == UserProfile.Role.EMPLOYER
+        )
+
+
+class SkillViewSet(viewsets.ModelViewSet):
+    queryset = Skill.objects.all()
+    serializer_class = SkillSerializer
+    permission_classes = [permissions.AllowAny]  # Allow unauthenticated access for testing
+    
+    def create(self, request, *args, **kwargs):
+        # Check if skill already exists
+        name = request.data.get('name')
+        if name:
+            skill, created = Skill.objects.get_or_create(name=name)
+            serializer = self.get_serializer(skill)
+            return Response(serializer.data)
+        return super().create(request, *args, **kwargs)
+
 
 class JobPostViewSet(viewsets.ModelViewSet):
-	queryset = JobPost.objects.all().order_by("-created_at")
-	serializer_class = JobPostSerializer
-	permission_classes = [IsEmployer]
+    queryset = JobPost.objects.all().order_by("-created_at")
+    serializer_class = JobPostSerializer
+    permission_classes = [IsEmployer]
 
-	def perform_create(self, serializer):
-		serializer.save(employer=self.request.user)
+    def perform_create(self, serializer):
+        serializer.save(employer=self.request.user)
+
 
 @api_view(["GET"])
 @permission_classes([permissions.IsAuthenticated])
 def me(request):
-	return Response({
-		"uid": request.user.username,
-		"email": request.user.email,
-		"role": request.user.profile.role,
-	})
+    return Response({
+        "uid": request.user.username,
+        "email": request.user.email,
+        "role": request.user.profile.role,
+    })
+
 
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def set_role(request):
-	role = request.data.get("role")
-	if role not in (UserProfile.Role.EMPLOYER, UserProfile.Role.JOB_SEEKER):
-		return Response({"error": "Invalid role"}, status=400)
-	profile, _ = UserProfile.objects.get_or_create(user=request.user)
-	profile.role = role
-	profile.save()
-	return Response({"role": role})
+    role = request.data.get("role")
+    if role not in (UserProfile.Role.EMPLOYER, UserProfile.Role.JOB_SEEKER):
+        return Response({"error": "Invalid role"}, status=400)
 
-# --- ADD THE NEW AI-POWERED RECOMMENDATION VIEW ---
+    profile, _ = UserProfile.objects.get_or_create(user=request.user)
+    profile.role = role
+    profile.save()
+    return Response({"role": role})
 
-# Configure the Gemini API client
-try:
-    genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
-except Exception as e:
-    print(f"Error configuring Gemini API: {e}")
+
+def _get_genai_client():
+    """Attempt to import and configure the google.generativeai client.
+
+    Returns (genai_module, None) on success or (None, error_message) on failure.
+    This keeps import/configuration lazy so management commands (migrate, makemigrations)
+    don't crash if the optional dependency is missing or not configured.
+    """
+    try:
+        import google.generativeai as genai  # imported lazily
+    except Exception:
+        return None, "google.generativeai not installed"
+
+    api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMINI_APIKEY")
+    if not api_key:
+        return None, "GEMINI_API_KEY not set in environment"
+
+    try:
+        # configure may raise if the client API changes; surface that message
+        genai.configure(api_key=api_key)
+    except Exception as e:
+        return None, f"Error configuring Gemini API: {e}"
+
+    return genai, None
+
 
 class AIRecommendationsView(APIView):
     """
@@ -81,7 +118,7 @@ class AIRecommendationsView(APIView):
         # Fetch all active job posts from the database
         all_jobs = JobPost.objects.filter(status='active')
         if not all_jobs.exists():
-            return Response([], status=status.HTTP_200_OK) # Return empty if no jobs exist
+            return Response([], status=status.HTTP_200_OK)  # Return empty if no jobs exist
 
         # Serialize job data to be sent to the AI
         job_serializer = JobPostSerializer(all_jobs, many=True)
@@ -90,14 +127,20 @@ class AIRecommendationsView(APIView):
         # Construct a detailed prompt for the Gemini API
         prompt = self.construct_prompt(user_profile, preferences, user_skills, jobs_data)
 
+        # Import and configure the Gemini client lazily. If it's not available or configured,
+        # return a 503 so management commands and non-AI flows continue to work.
+        genai, genai_err = _get_genai_client()
+        if genai is None:
+            return Response({"error": "AI service unavailable", "details": genai_err}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
         # Call the Gemini API
         try:
             model = genai.GenerativeModel('gemini-pro')
             response = model.generate_content(prompt)
-            
+			
             # Clean the response text to ensure it's valid JSON
-            cleaned_response_text = response.text.strip().replace('```json', '').replace('```', '').strip()
-            
+            cleaned_response_text = getattr(response, 'text', str(response)).strip().replace('```json', '').replace('```', '').strip()
+			
             # Parse the AI's response to get the recommended job IDs
             recommended_job_ids = json.loads(cleaned_response_text)
 

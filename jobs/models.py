@@ -2,6 +2,13 @@ from django.db import models
 from django.contrib.auth.models import User
 
 
+class Skill(models.Model):
+	name = models.CharField(max_length=100, unique=True)
+	
+	def __str__(self) -> str:
+		return self.name
+
+
 class UserProfile(models.Model):
 	class Role(models.TextChoices):
 		EMPLOYER = "EMPLOYER", "Employer"
@@ -35,6 +42,7 @@ class JobPost(models.Model):
 	salary = models.CharField(max_length=100, blank=True)
 	job_type = models.CharField(max_length=20, choices=JobType.choices, default=JobType.FULL_TIME)
 	status = models.CharField(max_length=10, choices=JobStatus.choices, default=JobStatus.ACTIVE)
+	skills = models.ManyToManyField(Skill, related_name="job_posts", blank=True)
 	applications_count = models.IntegerField(default=0)
 	created_at = models.DateTimeField(auto_now_add=True)
 

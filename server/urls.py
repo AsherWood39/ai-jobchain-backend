@@ -1,10 +1,11 @@
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from jobs.views import JobPostViewSet, me, set_role, AIRecommendationsView
+from jobs.views import JobPostViewSet, SkillViewSet, me, set_role, AIRecommendationsView
 
 router = DefaultRouter()
 router.register('jobs', JobPostViewSet, basename='job')
+router.register('skills', SkillViewSet, basename='skill')
 
 urlpatterns = [
 	path('admin/', admin.site.urls),
